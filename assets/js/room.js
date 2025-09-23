@@ -45,53 +45,23 @@ function extractYoutubeVideoId(url) {
   return match && match[1] ? match[1] : null;
 }
 
-function extractHealesVideoId(url) {
-  const regex = /video\.heales\.com\/video\/\?vid=([^&\s]+)/i;
-  const match = url.match(regex);
-  return match && match[1] ? match[1] : null;
+function showHealersErrorFallback(url) {
+  const errorContainer = document.createElement('div');
+  errorContainer.className = 'w-full h-full flex items-center justify-center bg-black text-white text-center p-8';
+  errorContainer.innerHTML = `
+    <div>
+      <h3 class="text-xl mb-4">Video embedding blocked</h3>
+      <p class="mb-6">Heales.com prevents embedding for security reasons.</p>
+      <a href="${url}" target="_blank" 
+         class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg inline-block">
+        Open Video in New Tab
+      </a>
+    </div>
+  `;
+  startPresentation(errorContainer);
 }
 
-function buildHealersOriginalUrl(videoId) {
-  // Original URL format
-  return `https://video.heales.com/video/?vid=${videoId}`;
-}
 
-async function extractHealesVideoUrl(videoId) {
-  const healesPageUrl = `https://video.heales.com/video/?vid=${videoId}`;
-  
-  try {
-    // Try to fetch the Heales page and extract the actual video URL
-    const response = await fetch(`/api/proxy-video?url=${encodeURIComponent(healesPageUrl)}`);
-    if (response.ok) {
-      const data = await response.json();
-      return data.videoUrl;
-    }
-  } catch (error) {
-    console.warn('Failed to extract video URL from Heales page:', error);
-  }
-  
-  // Fallback: try common video URL patterns
-  const possibleVideoUrls = [
-    `https://video.heales.com/videos/${videoId}.mp4`,
-    `https://video.heales.com/stream/${videoId}`,
-    `https://video.heales.com/media/${videoId}.mp4`,
-    `https://video.heales.com/content/${videoId}.mp4`,
-    `https://cdn.heales.com/videos/${videoId}.mp4`
-  ];
-  
-  for (const url of possibleVideoUrls) {
-    try {
-      const testResponse = await fetch(url, { method: 'HEAD' });
-      if (testResponse.ok && testResponse.headers.get('content-type')?.startsWith('video/')) {
-        return url;
-      }
-    } catch (error) {
-      // Continue to next URL
-    }
-  }
-  
-  return null;
-}
 
 function startPresentation(sharedVideoElement) {
   presentationLayout.classList.remove('hidden');
@@ -359,116 +329,35 @@ async function joinChannel(roomId, name) {
     document.getElementById('stop-sharing-button').classList.remove('hidden');
   });
 
-  channel.on('heales_video_shared', async (payload) => {
-    const videoId = payload.video_id;
-    
-    // Create container for video
-    const container = document.createElement('div');
-    container.className = 'w-full h-full flex items-center justify-center bg-black';
-    
-    // Show loading message
-    container.innerHTML = `
-      <div class="text-white text-center">
-        <p class="mb-4">Loading Heales video...</p>
-        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto"></div>
-      </div>
-    `;
-    
-    startPresentation(container);
-    
-    try {
-      console.log(`Extracting video URL for Heales video: ${videoId}`);
-      const videoUrl = await extractHealesVideoUrl(videoId);
-      
-      if (videoUrl) {
-        console.log(`Found video URL: ${videoUrl}`);
-        
-        // Create video element with the extracted URL
-        const videoPlayer = document.createElement('video');
-        videoPlayer.src = videoUrl;
-        videoPlayer.controls = true;
-        videoPlayer.autoplay = true;
-        videoPlayer.playsInline = true;
-        videoPlayer.className = 'w-full h-full object-contain';
-        
-        // Handle video load success
-        videoPlayer.onloadeddata = () => {
-          console.log('Heales video loaded successfully');
-          container.innerHTML = '';
-          container.appendChild(videoPlayer);
-        };
-        
-        // Handle video load error
-        videoPlayer.onerror = () => {
-          console.error('Failed to load extracted video URL');
-          container.innerHTML = `
-            <div class="text-white text-center">
-              <p class="mb-4">Video could not be loaded</p>
-              <a href="${buildHealersOriginalUrl(videoId)}" target="_blank" 
-                 class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
-                Open Video in New Tab
-              </a>
-            </div>
-          `;
-        };
-        
-      } else {
-        console.warn('Could not extract video URL, trying iframe fallback');
-        
-        // Fallback to iframe if video extraction fails
-        const iframe = document.createElement('iframe');
-        iframe.src = buildHealersOriginalUrl(videoId);
-        iframe.className = 'w-full h-full';
-        iframe.setAttribute('allowfullscreen', '');
-        iframe.setAttribute('frameborder', '0');
-        iframe.setAttribute('allow', 'autoplay; fullscreen; encrypted-media');
-        iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-presentation');
-        
-        iframe.onload = () => {
-          container.innerHTML = '';
-          container.appendChild(iframe);
-        };
-        
-        iframe.onerror = () => {
-          container.innerHTML = `
-            <div class="text-white text-center">
-              <p class="mb-4">Video embedding not supported</p>
-              <a href="${buildHealersOriginalUrl(videoId)}" target="_blank" 
-                 class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
-                Open Video in New Tab
-              </a>
-            </div>
-          `;
-        };
-      }
-      
-    } catch (error) {
-      console.error('Error processing Heales video:', error);
-      container.innerHTML = `
-        <div class="text-white text-center">
-          <p class="mb-4">Error loading video</p>
-          <a href="${buildHealersOriginalUrl(videoId)}" target="_blank" 
-             class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
-            Open Video in New Tab
-          </a>
-        </div>
-      `;
-    }
-
-    document.getElementById('open-youtube-modal').classList.add('hidden');
-    document.getElementById('stop-sharing-button').classList.remove('hidden');
-  });
 
   channel.on('new_direct_video', (payload) => {
     const url = payload.url;
 
     // Check if this is a Heales video URL
-    if (url.includes('video.heales.com')) {
+    if (url.includes('heales.com')) {
       const iframe = document.createElement('iframe');
       iframe.src = url;
       iframe.className = 'w-full h-full';
       iframe.setAttribute('allowfullscreen', '');
       iframe.setAttribute('frameborder', '0');
+      iframe.setAttribute('allow', 'autoplay; fullscreen; encrypted-media; camera; microphone');
+      
+      // Handle iframe load errors (e.g., X-Frame-Options blocking)
+      iframe.onerror = () => {
+        showHealersErrorFallback(url);
+      };
+      
+      // Also handle if iframe loads but shows nothing due to blocking
+      setTimeout(() => {
+        try {
+          if (!iframe.contentDocument && !iframe.contentWindow) {
+            showHealersErrorFallback(url);
+          }
+        } catch (e) {
+          showHealersErrorFallback(url);
+        }
+      }, 3000);
+      
       startPresentation(iframe);
     } else {
       // Handle as direct video file
@@ -714,12 +603,12 @@ export const Room = {
     shareVideoButton.addEventListener('click', () => {
       const url = youtubeUrlInput.value;
       const youtubeVideoId = extractYoutubeVideoId(url);
-      const healesVideoId = extractHealesVideoId(url);
 
       if (youtubeVideoId) {
         channel.push('share_youtube_video', { video_id: youtubeVideoId });
-      } else if (healesVideoId) {
-        channel.push('share_heales_video', { video_id: healesVideoId });
+      } else if (url.includes('heales.com')) {
+        // Treat Heales URLs as direct video URLs for better compatibility
+        channel.push('share_direct_video', { url: url });
       } else if (url.match(/\.mp4$|\.webm$|\.ogg$/)) {
         channel.push('share_direct_video', { url: url });
       } else {
